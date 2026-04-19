@@ -1,0 +1,35 @@
+{
+  "name": "lifestages-mandm",
+  "version": "0.2.0",
+  "private": true,
+  "description": "The Meaningful Message — turn a church's Sunday sermon into a 10-minute YouTube-native digital discipleship asset. Fully automated: Railway + Postgres + OpenRouter.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "build:workers": "tsc -p tsconfig.workers.json",
+    "worker:watcher": "node dist/workers/watcher/index.js",
+    "worker:generator": "node dist/workers/generator/index.js",
+    "dev:watcher": "tsx workers/watcher/index.ts",
+    "dev:generator": "tsx workers/generator/index.ts",
+    "seed:fielder": "tsx scripts/seed-fielder.ts",
+    "db:init": "tsx scripts/init-db.ts",
+    "check": "node --check next.config.js && echo 'syntax ok'"
+  },
+  "dependencies": {
+    "next": "15.3.2",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "pg": "8.13.1",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.14.0",
+    "@types/pg": "8.11.10",
+    "@types/react": "19.0.12",
+    "@types/react-dom": "19.0.4",
+    "tsx": "4.19.2",
+    "typescript": "5.8.3"
+  }
+}

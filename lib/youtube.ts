@@ -1,0 +1,184 @@
+import { TranscriptChunk } from "@/types/mm";
+
+// ─── Video URL parsing ─────────────────────────────────────────
+
+export function extractVideoId(input: string): string {
+  try {
+    const url = new URL(input);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.replace("/", "").trim();
+      if (id) return id;
+    }
+    const id = url.searchParams.get("v");
+    if (id) return id;
+    // Handle /embed/VIDEOID and /shorts/VIDEOID
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    if (pathParts.length >= 2 && (pathParts[0] === "embed" || pathParts[0] === "shorts")) {
+      return pathParts[1];
+    }
+  } catch {
+    // Fall through
+  }
+  // Maybe they just passed the bare ID
+  if (/^[A-Za-z0-9_-]{11}$/.test(input.trim())) {
+    return input.trim();
+  }
+  throw new Error(`Invalid YouTube URL or ID: ${input}`);
+}
+
+// ─── Transcript fetching ───────────────────────────────────────
+
+async function fetchWatchHtml(videoId: string): Promise<string> {
+  const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept-Language": "en-US,en;q=0.9"
+    },
+    cache: "no-store"
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch YouTube watch page for ${videoId} (${res.status}).`);
+  }
+  return res.text();
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/\\u0026/g, "&")
+    .replace(/\\u003d/g, "=")
+    .replace(/\\u002F/g, "/")
+    .replace(/\\u003c/g, "<")
+    .replace(/\\u003e/g, ">")
+    .replace(/\\"/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+type CaptionTrack = { baseUrl: string; languageCode?: string; name?: string };
+
+function extractCaptionTracks(html: string): CaptionTrack[] {
+  const marker = '"captionTracks":';
+  const start = html.indexOf(marker);
+  if (start === -1) {
+    throw new Error("No caption tracks found on the YouTube page.");
+  }
+  const slice = html.slice(start + marker.length);
+  // Find the end of the array
+  let depth = 0;
+  let end = -1;
+  for (let i = 0; i < slice.length; i++) {
+    const ch = slice[i];
+    if (ch === "[") depth++;
+    else if (ch === "]") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) throw new Error("Could not parse caption tracks JSON.");
+  const rawJson = slice.slice(0, end + 1);
+  const parsed = JSON.parse(rawJson);
+  return parsed.map((item: any) => ({
+    baseUrl: decodeHtmlEntities(item.baseUrl),
+    languageCode: item.languageCode,
+    name: item.name?.simpleText ?? item.name?.runs?.[0]?.text
+  }));
+}
+
+function pickEnglishTrack(tracks: CaptionTrack[]): CaptionTrack {
+  return (
+    tracks.find((t) => t.languageCode === "en") ??
+    tracks.find((t) => t.languageCode?.startsWith("en")) ??
+    tracks[0]
+  );
+}
+
+async function fetchCaptionTrack(baseUrl: string): Promise<TranscriptChunk[]> {
+  const res = await fetch(baseUrl, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to fetch caption track: ${res.status}`);
+  const xml = await res.text();
+
+  const textMatches = [...xml.matchAll(/<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g)];
+  return textMatches.map((m) => ({
+    start: parseFloat(m[1]),
+    dur: parseFloat(m[2]),
+    text: decodeHtmlEntities(m[3])
+      .replace(/<[^>]+>/g, "")
+      .replace(/\n/g, " ")
+      .trim()
+  })).filter((c) => c.text);
+}
+
+export async function getTranscriptFromYouTube(input: string): Promise<{
+  videoId: string;
+  title: string;
+  transcriptTitle?: string;
+  chunks: TranscriptChunk[];
+}> {
+  const videoId = extractVideoId(input);
+  const html = await fetchWatchHtml(videoId);
+
+  // Pull the video title while we have the HTML
+  const titleMatch =
+    html.match(/<meta\s+name="title"\s+content="([^"]+)"/) ??
+    html.match(/<title>([^<]+)<\/title>/);
+  const title = titleMatch ? decodeHtmlEntities(titleMatch[1]).replace(/\s*-\s*YouTube\s*$/, "").trim() : videoId;
+
+  const tracks = extractCaptionTracks(html);
+  if (tracks.length === 0) {
+    throw new Error("This video has no captions available.");
+  }
+  const track = pickEnglishTrack(tracks);
+  const chunks = await fetchCaptionTrack(track.baseUrl);
+
+  return {
+    videoId,
+    title,
+    transcriptTitle: track.name,
+    chunks
+  };
+}
+
+// ─── Channel RSS feed (for the watcher) ────────────────────────
+
+export type ChannelUpload = {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+};
+
+/**
+ * Fetch the 15 most recent uploads for a channel.
+ * Uses YouTube's public RSS feed — no API key, no quotas.
+ */
+export async function fetchChannelUploads(youtubeChannelId: string): Promise<ChannelUpload[]> {
+  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${youtubeChannelId}`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0" },
+    cache: "no-store"
+  });
+  if (!res.ok) {
+    throw new Error(`Channel RSS fetch failed for ${youtubeChannelId}: ${res.status}`);
+  }
+  const xml = await res.text();
+
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((m) => m[1]);
+  return entries
+    .map((entry) => {
+      const videoId = entry.match(/<yt:videoId>(.*?)<\/yt:videoId>/)?.[1] ?? "";
+      const titleRaw = entry.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "";
+      const published = entry.match(/<published>(.*?)<\/published>/)?.[1] ?? "";
+      return {
+        videoId,
+        title: decodeHtmlEntities(titleRaw).trim(),
+        publishedAt: published
+      };
+    })
+    .filter((v) => v.videoId);
+}

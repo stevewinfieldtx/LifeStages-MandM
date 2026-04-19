@@ -1,0 +1,36 @@
+# The Meaningful Message — Railway Service Configuration
+# One repo, three services, shared Postgres.
+
+# ─── Service 1: Web Dashboard ─────────────────────────────────
+[[services]]
+name = "web"
+[services.build]
+builder = "nixpacks"
+buildCommand = "npm install && npm run build"
+[services.deploy]
+startCommand = "npm run start"
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+
+# ─── Service 2: Channel Watcher (cron) ────────────────────────
+[[services]]
+name = "watcher"
+[services.build]
+builder = "nixpacks"
+buildCommand = "npm install && npm run build:workers"
+[services.deploy]
+startCommand = "npm run worker:watcher"
+# Runs hourly. Use Railway's cron feature to invoke on schedule.
+cronSchedule = "0 * * * *"
+restartPolicyType = "never"
+
+# ─── Service 3: Generation Worker (always-on) ─────────────────
+[[services]]
+name = "generator"
+[services.build]
+builder = "nixpacks"
+buildCommand = "npm install && npm run build:workers"
+[services.deploy]
+startCommand = "npm run worker:generator"
+restartPolicyType = "always"
