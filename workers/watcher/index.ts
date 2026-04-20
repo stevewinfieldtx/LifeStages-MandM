@@ -1,6 +1,6 @@
 /**
- * Channel Watcher — The Meaningful Message
- * ═══════════════════════════════════════════════════════════════
+ * Channel Watcher - The Meaningful Message
+ * ===============================================================
  * Runs on a Railway cron schedule (hourly by default).
  *
  * For each active channel:
