@@ -18,7 +18,7 @@ restartPolicyType = "on_failure"
 name = "watcher"
 [services.build]
 builder = "nixpacks"
-buildCommand = "npm install && npm run build:workers"
+buildCommand = "npm install && npm install tsc-alias --no-save && npm run build:workers && ./node_modules/.bin/tsc-alias -p tsconfig.workers.json"
 [services.deploy]
 startCommand = "npm run worker:watcher"
 # Runs hourly. Use Railway's cron feature to invoke on schedule.
