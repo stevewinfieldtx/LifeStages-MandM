@@ -123,53 +123,122 @@ function pickEnglishTrack(tracks: CaptionTrack[]): CaptionTrack {
         );
 }
 
+// Parse timed-text XML (attribute order on <text> is not guaranteed)
 async function fetchCaptionTrack(baseUrl: string): Promise<TranscriptChunk[]> {
-    const res = await fetch(baseUrl, { cache: "no-store" });
+  const res = await fetch(baseUrl, { cache: "no-store" });
     if (!res.ok) throw new Error(`Failed to fetch caption track: ${res.status}`);
-    const xml = await res.text();
-    const textMatches = [...xml.matchAll(/<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g)];
-    return textMatches.map((m) => ({
-          start: parseFloat(m[1]),
-          dur: parseFloat(m[2]),
-          text: decodeHtmlEntities(m[3])
-            .replace(/<[^>]+>/g, "")
-            .replace(/\n/g, " ")
-            .trim()
-    })).filter((c) => c.text);
-}
+      const xml = await res.text();
+        return parseCaptionXml(xml);
+        }
+
+        // Parse any YouTube timed-text XML document.
+        // <text start="N" dur="N"> or <text dur="N" start="N"> both work.
+        function parseCaptionXml(xml: string): TranscriptChunk[] {
+          const chunks: TranscriptChunk[] = [];
+            const elementRe = /<text\b([^>]*)>([\s\S]*?)<\/text>/g;
+              let m: RegExpExecArray | null;
+                while ((m = elementRe.exec(xml)) !== null) {
+                    const attrs = m[1];
+                        const rawText = m[2];
+                            const startMatch = attrs.match(/\bstart="([\d.]+)"/);
+                                const durMatch = attrs.match(/\bdur="([\d.]+)"/);
+                                    if (!startMatch) continue;
+                                        const text = decodeHtmlEntities(rawText)
+                                              .replace(/<[^>]+>/g, "")
+                                                    .replace(/\n/g, " ")
+                                                          .trim();
+                                                              if (!text) continue;
+                                                                  chunks.push({
+                                                                        start: parseFloat(startMatch[1]),
+                                                                              dur: durMatch ? parseFloat(durMatch[1]) : 0,
+                                                                                    text
+                                                                                        });
+                                                                                          }
+                                                                                            return chunks;
+                                                                                            }
+
+                                                                                            // Direct timedtext API fallback — works from server IPs when the
+                                                                                            // watch page approach is blocked by YouTube's bot-detection.
+                                                                                            async function fetchTranscriptDirect(videoId: string): Promise<TranscriptChunk[]> {
+                                                                                              // Try English first, then auto-generated English, then any language
+                                                                                                const attempts = [
+                                                                                                    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`,
+                                                                                                        `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&kind=asr`,
+                                                                                                            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en-US`,
+                                                                                                              ];
+                                                                                                                for (const url of attempts) {
+                                                                                                                    try {
+                                                                                                                          const res = await fetch(url, {
+                                                                                                                                  headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+                                                                                                                                          cache: "no-store"
+                                                                                                                                                });
+                                                                                                                                                      if (!res.ok) continue;
+                                                                                                                                                            const xml = await res.text();
+                                                                                                                                                                  if (!xml || xml.trim().length < 20) continue;
+                                                                                                                                                                        const chunks = parseCaptionXml(xml);
+                                                                                                                                                                              if (chunks.length > 0) return chunks;
+                                                                                                                                                                                  } catch {
+                                                                                                                                                                                        continue;
+                                                                                                                                                                                            }
+                                                                                                                                                                                              }
+                                                                                                                                                                                                throw new Error("No usable captions found via direct timedtext API.");
+                                                                                                                                                                                                }
 
 export async function getTranscriptFromYouTube(input: string): Promise<{
-    videoId: string;
+  videoId: string;
     title: string;
-    transcriptTitle?: string;
-    durationSec: number | null;
-    isLiveOrReplay: boolean;
-    chunks: TranscriptChunk[];
-}> {
-    const videoId = extractVideoId(input);
-    const html = await fetchWatchHtml(videoId);
+      transcriptTitle?: string;
+        durationSec: number | null;
+          isLiveOrReplay: boolean;
+            chunks: TranscriptChunk[];
+            }> {
+              const videoId = extractVideoId(input);
 
-  // Pull the video title while we have the HTML
-  const titleMatch =
-        html.match(/<meta\s+name="title"\s+content="([^"]+)"/) ??
-        html.match(/<title>([^<]+)<\/title>/);
-    const title = titleMatch
-      ? decodeHtmlEntities(titleMatch[1]).replace(/\s*-\s*YouTube\s*$/, "").trim()
-          : videoId;
+                // ── Primary approach: scrape the watch page for caption track URLs ──
+                  // This gives us signed URLs that work reliably but only when YouTube
+                    // doesn't serve a bot-detection page (which blocks cloud server IPs).
+                      try {
+                          const html = await fetchWatchHtml(videoId);
 
-  const durationSec = extractDurationSec(html);
-    const isLiveOrReplay = extractIsLiveOrReplay(html);
+                              const titleMatch =
+                                    html.match(/<meta\s+name="title"\s+content="([^"]+)"/) ??
+                                          html.match(/<title>([^<]+)<\/title>/);
+                                              const title = titleMatch
+                                                    ? decodeHtmlEntities(titleMatch[1]).replace(/\s*-\s*YouTube\s*$/, "").trim()
+                                                          : videoId;
 
-  const tracks = extractCaptionTracks(html);
-    if (tracks.length === 0) {
-          throw new Error("This video has no captions available.");
-    }
-    const track = pickEnglishTrack(tracks);
-    const chunks = await fetchCaptionTrack(track.baseUrl);
+                                                              const durationSec = extractDurationSec(html);
+                                                                  const isLiveOrReplay = extractIsLiveOrReplay(html);
 
-  return { videoId, title, transcriptTitle: track.name, durationSec, isLiveOrReplay, chunks };
-}
+                                                                      const tracks = extractCaptionTracks(html);
+                                                                          const track = pickEnglishTrack(tracks);
+                                                                              const chunks = await fetchCaptionTrack(track.baseUrl);
 
+                                                                                  if (chunks.length > 0) {
+                                                                                        return { videoId, title, transcriptTitle: track.name, durationSec, isLiveOrReplay, chunks };
+                                                                                            }
+                                                                                                // Chunks is empty — fall through to direct API
+                                                                                                    console.warn(`[youtube] watch-page caption track empty for ${videoId}, trying direct API...`);
+                                                                                                      } catch (err) {
+                                                                                                          const msg = err instanceof Error ? err.message : String(err);
+                                                                                                              console.warn(`[youtube] watch-page approach failed for ${videoId}: ${msg}. Trying direct API...`);
+                                                                                                                }
+
+                                                                                                                  // ── Fallback: direct timedtext API ──
+                                                                                                                    // Works when the watch page is blocked by YouTube bot-detection.
+                                                                                                                      // Returns no title or duration (only what we can get without the watch page).
+                                                                                                                        console.log(`[youtube] using direct timedtext API for ${videoId}`);
+                                                                                                                          const chunks = await fetchTranscriptDirect(videoId);
+                                                                                                                            return {
+                                                                                                                                videoId,
+                                                                                                                                    title: videoId, // no title without watch page
+                                                                                                                                        transcriptTitle: "auto-generated",
+                                                                                                                                            durationSec: null,
+                                                                                                                                                isLiveOrReplay: false,
+                                                                                                                                                    chunks
+                                                                                                                                                      };
+                                                                                                                                                      }
+                                                                                                                                                      
 // ─── Channel RSS feed (for the watcher) ──────────────────────
 export type ChannelUpload = {
     videoId: string;
