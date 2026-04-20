@@ -1,4 +1,4 @@
-import { TranscriptChunk } from "@/types/mm";
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────—─────────────────────────—import { TranscriptChunk } from "@/types/mm";
 
 // ─── Video URL parsing ────────────────────────────────────────
 export function extractVideoId(input: string): string {
