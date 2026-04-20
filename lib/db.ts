@@ -26,7 +26,7 @@ export function getPool(): Pool {
 }
 
 export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-  const res = await getPool().query(sql, params) as QueryResult<T>;
+  const res = await getPool().query(sql, params) as QueryResult<any>;
   return res.rows;
 }
 
