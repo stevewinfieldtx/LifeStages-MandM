@@ -1,4 +1,4 @@
-import { TranscriptChunk } from "@/types/mm";
+import { TranscriptChunk } from "../types/mm";
 
 export function transcriptChunksToText(chunks: TranscriptChunk[]): string {
   return chunks

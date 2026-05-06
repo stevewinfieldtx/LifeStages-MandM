@@ -1,5 +1,5 @@
-import { TranscriptChunk } from "@/types/mm";
-import { queryOne } from "@/lib/db";
+import { TranscriptChunk } from "../types/mm";
+import { queryOne } from "./db";
 
 // ─── Video URL parsing ─────────────────────────────────────────
 

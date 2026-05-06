@@ -1,4 +1,4 @@
-import { callOpenRouter, estimateCost } from "@/lib/openrouter";
+import { callOpenRouter, estimateCost } from "./openrouter";
 import {
   fidelityCheckPrompt,
   mmScriptPrompt,
@@ -6,14 +6,14 @@ import {
   scenePlanPrompt,
   sermonAnalysisPrompt,
   sermonBoundaryPrompt
-} from "@/lib/prompts";
+} from "./prompts";
 import {
   FidelityReport,
   MMResult,
   PublishKit,
   ScenePlan,
   SermonAnalysis
-} from "@/types/mm";
+} from "../types/mm";
 
 export type MMRunOutput = MMResult & {
   sermonOnlyText: string;
