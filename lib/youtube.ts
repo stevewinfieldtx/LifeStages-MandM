@@ -1,4 +1,5 @@
 import { TranscriptChunk } from "@/types/mm";
+import { queryOne } from "@/lib/db";
 
 // ─── Video URL parsing ─────────────────────────────────────────
 
@@ -26,22 +27,16 @@ export function extractVideoId(input: string): string {
   throw new Error(`Invalid YouTube URL or ID: ${input}`);
 }
 
-// ─── Transcript fetching ───────────────────────────────────────
-
-async function fetchWatchHtml(videoId: string): Promise<string> {
-  const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": "en-US,en;q=0.9"
-    },
-    cache: "no-store"
-  } as RequestInit);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch YouTube watch page for ${videoId} (${res.status}).`);
-  }
-  return res.text();
-}
+// ─── Transcript retrieval (cache-only) ──────────────────────────
+// M&M no longer fetches transcripts directly — YouTube has aggressively
+// closed every free unauthenticated path. Instead, an upstream ingestor
+// (TDE; see TargetedDecomposition/src/ingest/youtube.js) does the heavy
+// lifting (yt-dlp / watch-page / Groq Whisper) and POSTs the result to
+// /api/transcripts/inbound, which lands a row in `transcripts_cache`.
+//
+// This function reads from that cache and throws a TranscriptNotCached
+// error if the row isn't there yet, signaling the caller to defer the
+// job rather than mark it failed.
 
 function decodeHtmlEntities(text: string): string {
   return text
@@ -58,62 +53,20 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&gt;/g, ">");
 }
 
-type CaptionTrack = { baseUrl: string; languageCode?: string; name?: string };
-
-function extractCaptionTracks(html: string): CaptionTrack[] {
-  const marker = '"captionTracks":';
-  const start = html.indexOf(marker);
-  if (start === -1) {
-    throw new Error("No caption tracks found on the YouTube page.");
+export class TranscriptNotCached extends Error {
+  videoId: string;
+  constructor(videoId: string) {
+    super(`No transcript cached for video ${videoId}. Push it via /api/transcripts/inbound (TDE does this automatically).`);
+    this.name = "TranscriptNotCached";
+    this.videoId = videoId;
   }
-  const slice = html.slice(start + marker.length);
-  // Find the end of the array
-  let depth = 0;
-  let end = -1;
-  for (let i = 0; i < slice.length; i++) {
-    const ch = slice[i];
-    if (ch === "[") depth++;
-    else if (ch === "]") {
-      depth--;
-      if (depth === 0) {
-        end = i;
-        break;
-      }
-    }
-  }
-  if (end === -1) throw new Error("Could not parse caption tracks JSON.");
-  const rawJson = slice.slice(0, end + 1);
-  const parsed = JSON.parse(rawJson);
-  return parsed.map((item: any) => ({
-    baseUrl: decodeHtmlEntities(item.baseUrl),
-    languageCode: item.languageCode,
-    name: item.name?.simpleText ?? item.name?.runs?.[0]?.text
-  }));
 }
 
-function pickEnglishTrack(tracks: CaptionTrack[]): CaptionTrack {
-  return (
-    tracks.find((t) => t.languageCode === "en") ??
-    tracks.find((t) => t.languageCode?.startsWith("en")) ??
-    tracks[0]
-  );
-}
-
-async function fetchCaptionTrack(baseUrl: string): Promise<TranscriptChunk[]> {
-  const res = await fetch(baseUrl, { cache: "no-store" } as RequestInit);
-  if (!res.ok) throw new Error(`Failed to fetch caption track: ${res.status}`);
-  const xml = await res.text();
-
-  const textMatches = [...xml.matchAll(/<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g)];
-  return textMatches.map((m) => ({
-    start: parseFloat(m[1]),
-    dur: parseFloat(m[2]),
-    text: decodeHtmlEntities(m[3])
-      .replace(/<[^>]+>/g, "")
-      .replace(/\n/g, " ")
-      .trim()
-  })).filter((c) => c.text);
-}
+type TranscriptCacheRow = {
+  video_title: string | null;
+  chunks: TranscriptChunk[];
+  source: string | null;
+};
 
 export async function getTranscriptFromYouTube(input: string): Promise<{
   videoId: string;
@@ -122,26 +75,18 @@ export async function getTranscriptFromYouTube(input: string): Promise<{
   chunks: TranscriptChunk[];
 }> {
   const videoId = extractVideoId(input);
-  const html = await fetchWatchHtml(videoId);
-
-  // Pull the video title while we have the HTML
-  const titleMatch =
-    html.match(/<meta\s+name="title"\s+content="([^"]+)"/) ??
-    html.match(/<title>([^<]+)<\/title>/);
-  const title = titleMatch ? decodeHtmlEntities(titleMatch[1]).replace(/\s*-\s*YouTube\s*$/, "").trim() : videoId;
-
-  const tracks = extractCaptionTracks(html);
-  if (tracks.length === 0) {
-    throw new Error("This video has no captions available.");
+  const row = await queryOne<TranscriptCacheRow>(
+    `SELECT video_title, chunks, source FROM transcripts_cache WHERE youtube_video_id = $1`,
+    [videoId]
+  );
+  if (!row) {
+    throw new TranscriptNotCached(videoId);
   }
-  const track = pickEnglishTrack(tracks);
-  const chunks = await fetchCaptionTrack(track.baseUrl);
-
   return {
     videoId,
-    title,
-    transcriptTitle: track.name,
-    chunks
+    title: row.video_title || videoId,
+    transcriptTitle: row.source ?? undefined,
+    chunks: row.chunks
   };
 }
 

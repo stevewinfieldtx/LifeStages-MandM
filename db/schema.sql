@@ -76,6 +76,18 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Transcripts pushed in by TDE (or any other ingestor). Keyed by YouTube
+-- video ID so re-pushing the same video upserts. M&M never fetches from
+-- YouTube directly anymore — the watcher just creates discovered jobs and
+-- the generator waits for a row here before processing.
+CREATE TABLE IF NOT EXISTS transcripts_cache (
+  youtube_video_id TEXT PRIMARY KEY,
+  video_title      TEXT,
+  chunks           JSONB NOT NULL,
+  source           TEXT,    -- e.g. 'yt-dlp-subs' | 'watch-page' | 'groq-whisper'
+  fetched_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Video render attempts. One M&M output can be re-rendered with different
 -- themes/voices, so this is one-to-many with mm_outputs.
 CREATE TABLE IF NOT EXISTS video_renders (

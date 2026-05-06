@@ -9,7 +9,7 @@
  */
 
 import { query, queryOne, closePool } from "../../lib/db";
-import { getTranscriptFromYouTube } from "../../lib/youtube";
+import { getTranscriptFromYouTube, TranscriptNotCached } from "../../lib/youtube";
 import { basicCleanTranscript, transcriptChunksToText } from "../../lib/transcript";
 import { runMeaningfulMessage } from "../../lib/mm";
 import { sendReviewEmail } from "../../lib/email";
@@ -122,10 +122,31 @@ async function processJob(job: ClaimedJob): Promise<void> {
       `fidelity: ${mm.fidelityReport.confidenceScore}/100)`
     );
   } catch (err) {
+    if (err instanceof TranscriptNotCached) {
+      // Transcript hasn't been pushed by TDE yet. Park in awaiting_transcript;
+      // the loop's promoteAwaitingTranscript() will move it back to discovered
+      // after the backoff so we don't tight-loop on the same job.
+      console.log(`[generator] ⏸  job ${job.id} awaiting transcript for ${err.videoId}`);
+      await markStatus(job.id, "awaiting_transcript");
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[generator] ✗ job ${job.id} error:`, msg);
     await markStatus(job.id, "error", msg);
   }
+}
+
+/**
+ * Promote any awaiting_transcript jobs whose backoff has elapsed back
+ * to discovered so the next claim picks them up. Cheap; runs every loop.
+ */
+async function promoteAwaitingTranscript(): Promise<void> {
+  await query(
+    `UPDATE sermon_jobs
+       SET status = 'discovered'
+     WHERE status = 'awaiting_transcript'
+       AND updated_at < NOW() - INTERVAL '60 seconds'`
+  );
 }
 
 async function runLoop(): Promise<void> {
@@ -143,6 +164,7 @@ async function runLoop(): Promise<void> {
 
   while (!shuttingDown) {
     try {
+      await promoteAwaitingTranscript();
       const job = await claimNextJob();
       if (!job) {
         await new Promise((r) => setTimeout(r, IDLE_POLL_INTERVAL_MS));
