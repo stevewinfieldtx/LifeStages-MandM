@@ -1,0 +1,229 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0b1020;
+  color: #f3f4f6;
+  line-height: 1.5;
+}
+
+* { box-sizing: border-box; }
+
+a { color: #fbbf24; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { cursor: pointer; font-family: inherit; }
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.header {
+  border-bottom: 1px solid #26304d;
+  padding-bottom: 16px;
+  margin-bottom: 32px;
+}
+
+.header h1 {
+  margin: 0 0 6px 0;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.header .subtitle {
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.card {
+  background: #141a2f;
+  border: 1px solid #26304d;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.card h3 {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 860px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+.input, .textarea, .select {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.input:focus, .textarea:focus, .select:focus {
+  outline: none;
+  border-color: #fbbf24;
+}
+
+.textarea { min-height: 180px; resize: vertical; }
+
+.btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: #fbbf24;
+  color: #111827;
+}
+
+.btn-primary:hover:not(:disabled) { background: #f59e0b; }
+
+.btn-secondary {
+  background: #1f2937;
+  color: #f9fafb;
+  border: 1px solid #374151;
+}
+
+.btn-secondary:hover:not(:disabled) { background: #374151; }
+
+.btn-danger {
+  background: #7f1d1d;
+  color: #fef2f2;
+  border: 1px solid #991b1b;
+}
+
+.btn-danger:hover:not(:disabled) { background: #991b1b; }
+
+pre {
+  white-space: pre-wrap;
+  font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: #0a0f1f;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  border: 1px solid #1e293b;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-pending { background: #451a03; color: #fbbf24; }
+.badge-approved { background: #064e3b; color: #34d399; }
+.badge-rejected { background: #450a0a; color: #fca5a5; }
+.badge-error { background: #450a0a; color: #fca5a5; }
+.badge-discovered { background: #1e293b; color: #94a3b8; }
+.badge-generating { background: #1e3a8a; color: #93c5fd; }
+
+.job-list { display: grid; gap: 12px; }
+
+.job-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #141a2f;
+  border: 1px solid #26304d;
+  border-radius: 12px;
+  transition: border-color 0.15s;
+}
+
+.job-row:hover { border-color: #fbbf24; }
+
+.job-row .title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.job-row .meta {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 64px 20px;
+  color: #64748b;
+}
+
+.error {
+  background: #450a0a;
+  border: 1px solid #991b1b;
+  color: #fecaca;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.success {
+  background: #064e3b;
+  border: 1px solid #047857;
+  color: #a7f3d0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.fidelity-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  border: 1px solid #334155;
+}
+
+.fidelity-score .score {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.fidelity-high { color: #34d399; }
+.fidelity-medium { color: #fbbf24; }
+.fidelity-low { color: #fca5a5; }
+
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #26304d;
+}
+
+.tab-nav button {
+  background: transparent;
+  border: 0;
+  color: #94a3b8;
+  padding: 10px 16px;
+  font-size: 14px;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-nav button.active {
+  color: #fbbf24;
+  border-bottom-color: #fbbf24;
+}
