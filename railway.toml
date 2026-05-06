@@ -1,7 +1,13 @@
 # The Meaningful Message — Railway Service Configuration
-# One repo, four services, shared Postgres, shared Volume for rendered MP4s.
+# Three services + shared Postgres + one Volume on the web service.
+# The renderer runs IN-PROCESS inside the web service (see
+# instrumentation.ts) because Railway's Volumes are 1:1 with a service.
 
-# ─── Service 1: Web Dashboard ─────────────────────────────────
+# ─── Service 1: Web Dashboard + embedded renderer ─────────────
+# Serves the Next.js dashboard AND polls video_renders to do the
+# ffmpeg/ElevenLabs/slide work in the same Node process. Single
+# Volume mount works because the renderer writes and the web stream
+# both happen in this container.
 [[services]]
 name = "web"
 [services.build]
@@ -12,8 +18,6 @@ startCommand = "npm run start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
-# Mount the shared renders volume here so /api/renders/[id]/video.mp4
-# can stream files written by the renderer worker.
 [[services.volumes]]
 name = "renders"
 mountPath = "/data"
@@ -39,18 +43,3 @@ buildCommand = "npm install && npm run build:workers"
 [services.deploy]
 startCommand = "npm run worker:generator"
 restartPolicyType = "always"
-
-# ─── Service 4: Renderer Worker (always-on, ffmpeg) ───────────
-# Picks pending video_renders rows, calls ElevenLabs for TTS, builds
-# slides, stitches with ffmpeg, writes MP4 to /data/renders/{id}/.
-[[services]]
-name = "renderer"
-[services.build]
-builder = "nixpacks"
-buildCommand = "npm install && npm run build:workers"
-[services.deploy]
-startCommand = "npm run worker:renderer"
-restartPolicyType = "always"
-[[services.volumes]]
-name = "renders"
-mountPath = "/data"
